@@ -1,17 +1,12 @@
 import os
 import yaml
-import json
 import numpy as np
 import sys
 sys.path.insert(0, '/home/katarzynam/windturbine_loads')
-from modules.dir_functions import timestamp_now
 from modules.data_manipulation import preprocess_data_for_model
 from modules.data_loading import load_preprocessed_data
-from modules import log_functions
-#import modules.model_definition_torch as md
 import modules.model_definitions_pytorch as md
 import torch
-import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
 
