@@ -1,0 +1,38 @@
+cp_freq: 1
+t_len: 300
+lr_G: 0.0001
+lr_D: 0.0001
+n_epochs: 2000
+batch_size: 512
+log_freq: 10
+sa_weights: false
+data_seed: 
+  - 1
+  - 2
+increase_nr_samples: false
+
+X_vars:
+  - Rotor speed
+  - Nacelle fore-aft acceleration
+  - Nacelle side-side acceleration
+  - Rotor azimuth angle
+  - Blade 1 pitch angle
+  - Generator speed
+  - HSS torque
+  - Electrical power
+
+Y_vars:
+  - Tower My (at 0.00m)
+
+add_info_to_X: true
+range_SH: null
+range_TI: null
+range_U: null
+range_DIR: null
+range_D: null
+
+model_preload: null
+model_preload_cp: 1000
+model_preload_nr_freeze_epochs: 50
+model_dir: '/home/katarzynam/models'
+noise_vector_dim: 10
