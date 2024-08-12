@@ -1,6 +1,5 @@
 import os
 import yaml
-import json
 import numpy as np
 import sys
 sys.path.insert(0, '/home/katarzynam/windturbine_loads')
@@ -9,12 +8,10 @@ from modules.data_manipulation import preprocess_data_for_model
 from modules.data_loading import load_preprocessed_data
 from modules import log_functions
 from modules.plotting import plot_gan_samples
-#import modules.model_definition_torch as md
 import modules.model_definitions_pytorch as md
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-from torchsummary import summary
 import matplotlib.pyplot as plt
 
 
@@ -153,7 +150,7 @@ for epoch in range(1, params.get('n_epochs')+1):
             
     if epoch % params.get('cp_freq')==0:
         torch.save(generator.state_dict(), os.path.join(checkpoint_dir, f"cp-{epoch:04d}.pth"))
-        torch.save(discriminator.state_dict(), os.path.join(checkpoint_dir, f"cp-{epoch:04d}.pth"))
+        #torch.save(discriminator.state_dict(), os.path.join(checkpoint_dir, f"cp-{epoch:04d}.pth"))
         print(f"Checkpoint saved at epoch {epoch}")
 
 # Plot the losses over epochs
