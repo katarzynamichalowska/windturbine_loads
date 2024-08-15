@@ -7,8 +7,8 @@ from modules.data_manipulation import preprocess_data_for_model
 from modules.data_loading import load_preprocessed_data
 import modules.model_definitions_pytorch as md
 import torch
-from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
+from modules.plotting import plot_gan_samples
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -49,14 +49,14 @@ condition_dim = X.shape[2]  # Condition dimension
 input_channels = Y.shape[2]  # Number of output channels from the generator, matches real data channels
 
 X = torch.tensor(X, dtype=torch.float32)
-Y = torch.tensor(Y, dtype=torch.float32)
+#Y = torch.tensor(Y, dtype=torch.float32)
 
 # Create dataset and dataloader
 print("Testing data shapes:")
 print(f"X: {X.shape}")
 print(f"Y: {Y.shape}")
-dataset = TensorDataset(X, Y)
-dataloader = DataLoader(dataset, batch_size=params_model.get('batch_size'), shuffle=True)
+#dataset = TensorDataset(X, Y)
+#dataloader = DataLoader(dataset, batch_size=params_model.get('batch_size'), shuffle=False)
 
 if not os.path.exists(os.path.join(output_folder, "testing")):
     os.makedirs(os.path.join(output_folder, "testing"))
@@ -68,18 +68,59 @@ generator = md.Generator(input_features=X.shape[2], hidden_dim=100, noise_dim=pa
 
 generator.to(device)
 
+np.random.seed(42)
+indices = np.random.choice(len(Y), 8, replace=False)
+
+mse_loss_list = []
+fft_mse_loss_list = []
+
 for epoch in params.get('cp'):
+    print(f"Epoch: {epoch}")
     weigths_path = os.path.join(main_model_folder, modelname, "cp", f"cp-{epoch:04d}.pth")
     if device==torch.device('cuda'):
         generator.load_state_dict(torch.load(weigths_path))
     else:
         generator.load_state_dict(torch.load(weigths_path, map_location=torch.device('cpu')))
 
-#discriminator = md.Discriminator(input_channels, condition_dim)
+    Y_gen = generator(X)
+    Y_gen = Y_gen.detach().cpu().numpy()
+
+    # Statistics on timeseries
+    plot_gan_samples(Y[indices], Y_gen[indices], num_pairs=8, figsize=(3, 5), 
+                    plot_name=f'ts_e{epoch}',
+                    output_folder=os.path.join(output_folder, "testing"))
+    
+    mse_loss_list.append(np.mean((Y - Y_gen)**2))
+
+    # Statistics on FFT
+    Y_gen_fft = np.abs(np.fft.fft(Y_gen, axis=1))[:, :timesteps//2]
+    Y_fft = np.abs(np.fft.fft(Y, axis=1))[:, :timesteps//2]
+
+    fft_mse_loss_list.append(np.mean((Y_fft - Y_gen_fft)**2))
+    
+    plot_gan_samples(Y_fft[indices], Y_gen_fft[indices], num_pairs=8, figsize=(3, 5), 
+                    plot_name=f'fft_e{epoch}',
+                    output_folder=os.path.join(output_folder, "testing"))
+    plot_gan_samples(Y_fft[indices], Y_gen_fft[indices], num_pairs=8, figsize=(3, 5), 
+                    plot_name=f'fft_e{epoch}_log',
+                    output_folder=os.path.join(output_folder, "testing"), log=True)
 
 
-#criterion = nn.BCELoss()
+plt.figure(figsize=(5, 4))
+plt.plot(params.get('cp'), mse_loss_list)
+plt.xlabel("Epoch")
+plt.ylabel("MSE Loss")
+plt.title("MSE Loss per Epoch")
+plt.tight_layout()
+plt.savefig(os.path.join(output_folder, "testing", "ts_mse_loss.pdf"))
 
-# Device configuration
+plt.figure(figsize=(5, 4))
+plt.plot(params.get('cp'), fft_mse_loss_list)
+plt.xlabel("Epoch")
+plt.ylabel("MSE Loss")
+plt.title("FFT MSE Loss per Epoch")
+plt.tight_layout()
+plt.savefig(os.path.join(output_folder, "testing", "fft_mse_loss.pdf"))
 
-#discriminator.to(device)
+
+# Add new losses. Compare on meaningful features of the data.
