@@ -146,6 +146,7 @@ for epoch in range(1, params.get('n_epochs')+1):
             print(f"[Epoch {epoch}/{params["n_epochs"]}] [Batch {i}/{len(dataloader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
 
             plot_gan_samples(epoch, real_data[:8], generated_data[:8], num_pairs=8, figsize=(10, 5), 
+                             plot_name=f'comparison_output_{epoch}',
                              output_folder=os.path.join(output_folder, "plots"))
             
     if epoch % params.get('cp_freq')==0:
