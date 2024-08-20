@@ -36,3 +36,5 @@ model_preload_cp: 1000
 model_preload_nr_freeze_epochs: 50
 model_dir: '/home/katarzynam/models'
 noise_vector_dim: 10
+
+reconstructive_loss_lambda: 0.1
