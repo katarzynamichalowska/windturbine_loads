@@ -6,9 +6,9 @@ n_epochs: 2000
 batch_size: 512
 log_freq: 10
 sa_weights: false
-data_seed: 
-  - 1
-  - 2
+datasets: 
+  - /home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_1.npz
+  - /home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_2.npz
 increase_nr_samples: false
 
 X_vars:
@@ -37,4 +37,4 @@ model_preload_nr_freeze_epochs: 50
 model_dir: '/home/katarzynam/models'
 noise_vector_dim: 10
 
-reconstructive_loss_lambda: 0.1
+reconstructive_loss_lambda: 0.0
