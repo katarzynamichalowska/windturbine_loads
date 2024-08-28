@@ -1,0 +1,16 @@
+datasets: 
+  - /home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_3.npz
+model_load: null
+model_dir: /home/katarzynam/models
+model: cgan_240821_14511519
+cp: [100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000]  
+batch_size: 1000
+compute_wasserstein: true
+compute_fft: true
+compute_mse: true
+compute_cosine_similarity: true
+compute_fatigue: true
+compute_generator_diversity: true
+compute_wavelets: true
+plot_samples: true
+fatigue_sc: 90.0

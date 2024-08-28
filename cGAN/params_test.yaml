@@ -1,5 +1,0 @@
-data_seed: [3]
-model_load: null
-model_dir: '/home/katarzynam/models'
-model: cgan_240810_21172571
-cp: [1000]  
