@@ -2,7 +2,9 @@ import os
 import yaml
 import numpy as np
 import sys
-sys.path.insert(0, '/home/katarzynam/home/katarzynam/windturbine_loads')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.join(current_dir, '..')
+sys.path.insert(0, os.path.abspath(parent_dir))
 from modules.dir_functions import timestamp_now
 from modules.data_manipulation import preprocess_data_for_model
 from modules.data_loading import load_preprocessed_data
@@ -17,8 +19,9 @@ import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
-with open('/home/katarzynam/home/katarzynam/windturbine_loads/cGAN/params_train_cgan.yaml', 'r') as file:
+with open(os.path.join(script_dir, 'params_train_cgan.yaml'), 'r') as file:
     params = dict(yaml.safe_load(file))
 
 main_model_folder = params.get('model_dir')
@@ -30,10 +33,9 @@ with open(os.path.join(output_folder, 'params_model.yaml'), 'w') as file:
     yaml.dump(params, file, default_flow_style=False)
 
 # Load data
-if isinstance(params.get('data_seed'), list):
+if isinstance(params.get('datasets'), list):
     X_list, Y_list = [], []
-    for i in params.get('data_seed'):
-        data_dir = f"/home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_{i}.npz"
+    for data_dir in params.get('datasets'):
         X, Y, scaler_X, scaler_y, columns_X, columns_Y, info, info_columns = load_preprocessed_data(data_dir, add_info_to_X=params["add_info_to_X"])
         X, Y, scaler_X, scaler_y, info = preprocess_data_for_model(X, Y, scaler_X, scaler_y, col_names_X=columns_X, col_names_Y=columns_Y, info=info, params=params)
 
@@ -43,8 +45,10 @@ if isinstance(params.get('data_seed'), list):
 
     X = np.vstack(X_list)
     Y = np.vstack(Y_list)
+else:
+    raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
 
-variance_y = np.var(Y)
+variance_y = np.var(Y) 
 
 checkpoint_dir = os.path.join(output_folder, "cp")
 
@@ -141,7 +145,7 @@ for epoch in range(1, params.get('n_epochs')+1):
             else:
                 print(f"[Epoch {epoch}/{params.get('n_epochs')}] [Batch {i}/{len(dataloader)}] [D loss: {d_loss.item()}] [G loss fool: {g_loss.item()-g_mse.item()}] [G MSE: {g_mse.item()}]")
 
-            plot_gan_samples(real_data[:8], generated_data[:8], num_pairs=8, figsize=(10, 5), 
+            plot_gan_samples(real_data[:8].detach().cpu().numpy(), generated_data[:8].detach().cpu().numpy(), num_pairs=8, figsize=(5, 5), 
                              plot_name=f'comparison_output_{epoch}',
                              output_folder=os.path.join(output_folder, "plots"))
             
