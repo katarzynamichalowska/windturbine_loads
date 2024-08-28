@@ -14,3 +14,5 @@ compute_generator_diversity: true
 compute_wavelets: true
 plot_samples: true
 fatigue_sc: 90.0
+wavelet_function: db4
+

@@ -157,8 +157,8 @@ for epoch in params.get('cp'):
             fft_log_mse_loss += np.sum((np.log(Y_i_fft) - np.log(Y_gen_i_fft))**2)
 
         if params.get('compute_wavelets'):
-            wt_Y_i_cA, wt_Y_i_cD1, wt_Y_i_cD2, wt_Y_i_cD3 = pywt.wavedec(Y_i, 'db1', level=3)
-            wt_Y_gen_i_cA, wt_Y_gen_i_cD1, wt_Y_gen_i_cD2, wt_Y_gen_i_cD4 = pywt.wavedec(Y_gen_i, 'db1', level=3)
+            wt_Y_i_cA, wt_Y_i_cD1, wt_Y_i_cD2, wt_Y_i_cD3 = pywt.wavedec(Y_i, params.get('wavelet_function'), level=3)
+            wt_Y_gen_i_cA, wt_Y_gen_i_cD1, wt_Y_gen_i_cD2, wt_Y_gen_i_cD4 = pywt.wavedec(Y_gen_i, params.get('wavelet_function'), level=3)
             wt_cA_mse_loss += np.sum((wt_Y_i_cA - wt_Y_gen_i_cA)**2)
             wt_cD1_mse_loss += np.sum((wt_Y_i_cD1 - wt_Y_gen_i_cD1)**2)
             wt_cD2_mse_loss += np.sum((wt_Y_i_cD2 - wt_Y_gen_i_cD2)**2)
