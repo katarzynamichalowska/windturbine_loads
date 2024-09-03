@@ -1,9 +1,15 @@
 datasets: 
   - /home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_3.npz
-model_load: null
 model_dir: /home/katarzynam/models
-model: cgan_240821_14511519
-cp: [100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000]  
+model: 
+  - cgan_240831_19354794
+  - cgan_240831_19481285
+  - cgan_240901_23564599
+model_labels:
+  - $\lambda_{fftmse}=1.0$
+  - $\lambda_{mse}=1.0$
+  - FFT Discriminator
+cp: [500,1000,1500,2000]  
 batch_size: 1000
 compute_wasserstein: true
 compute_fft: true
