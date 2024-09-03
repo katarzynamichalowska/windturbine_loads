@@ -27,13 +27,13 @@ To set up this project, follow these steps:
 1. **Clone the repository:**
 
     ```bash
-    git clone https://github.com/yourusername/your-repo.git
+    git clone https://github.com/katarzynamichalowska/windturbine_loads.git
     ```
 
 2. **Navigate to the project directory:**
 
     ```bash
-    cd your-repo
+    cd windturbine_loads
     ```
 
 3. **Install dependencies:**
