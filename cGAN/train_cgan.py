@@ -15,6 +15,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
+import modules.losses as losses
+from timeit import default_timer as timer
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -36,7 +38,7 @@ with open(os.path.join(output_folder, 'params_model.yaml'), 'w') as file:
 if isinstance(params.get('datasets'), list):
     X_list, Y_list = [], []
     for data_dir in params.get('datasets'):
-        X, Y, scaler_X, scaler_y, columns_X, columns_Y, info, info_columns = load_preprocessed_data(data_dir, add_info_to_X=params["add_info_to_X"])
+        X, Y, scaler_X, scaler_y, columns_X, columns_Y, info, info_columns = load_preprocessed_data(data_dir, add_info_to_X=params.get('add_info_to_X'))
         X, Y, scaler_X, scaler_y, info = preprocess_data_for_model(X, Y, scaler_X, scaler_y, col_names_X=columns_X, col_names_Y=columns_Y, info=info, params=params)
 
 
@@ -48,10 +50,8 @@ if isinstance(params.get('datasets'), list):
 else:
     raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
 
-variance_y = np.var(Y) 
-
+variance_y = np.var(Y)
 checkpoint_dir = os.path.join(output_folder, "cp")
-
 logs_path = os.path.join(output_folder, "log.out")
 logs = open(logs_path, 'w')
 logs.write(log_functions.print_time("Program started"))
@@ -62,17 +62,21 @@ timesteps = X.shape[1]
 condition_dim = X.shape[2]
 input_channels = Y.shape[2] 
 
-generator = md.Generator(input_features=X.shape[2], hidden_dim=100, noise_dim=params["noise_vector_dim"], 
-                         timesteps=params["t_len"])
+generator = md.Generator(input_features=X.shape[2], hidden_dim=params.get('hidden_dim'), noise_dim=params.get('noise_vector_dim'), 
+                         timesteps=params.get('t_len'))
 
 if params.get("model_preload") is not None:
-    weigths_path = os.path.join(main_model_folder, params["model_preload"], "checkpoints", f"cp-{params['model_preload_cp']:04d}.pth")
+    weigths_path = os.path.join(main_model_folder, params.get('model_preload'), "checkpoints", f"cp-{params.get('model_preload_cp'):04d}.pth")
     if device==torch.device('cuda'):
         generator.load_state_dict(torch.load(weigths_path))
     else:
         generator.load_state_dict(torch.load(weigths_path, map_location=torch.device('cpu')))
 
-discriminator = md.Discriminator(input_channels, condition_dim)
+if params.get('discr_input') == "ts":
+    discriminator = md.Discriminator(input_channels, condition_dim)
+    
+elif params.get('discr_input') == "fft":
+    discriminator = md.DiscriminatorFFTInput(input_channels, condition_dim)
 
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=params.get('lr_G'), betas=(0.5, 0.999))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=params.get('lr_D'), betas=(0.5, 0.999))
@@ -104,6 +108,8 @@ d_loss_list = []
 g_loss_list = []
     
 for epoch in range(1, params.get('n_epochs')+1):
+    t1 = timer()
+
     for i, (conditions, real_data) in enumerate(dataloader):
         real_data = real_data.to(device).float()
         conditions = conditions.to(device).float()
@@ -114,7 +120,6 @@ for epoch in range(1, params.get('n_epochs')+1):
         fake = torch.zeros(current_batch_size, 1, requires_grad=False).to(device)
 
         optimizer_D.zero_grad()
-        
         generated_data = generator(conditions)
 
         real_loss = criterion(discriminator(real_data, conditions), valid)
@@ -130,24 +135,40 @@ for epoch in range(1, params.get('n_epochs')+1):
         g_mse = nn.MSELoss()(generated_data, real_data)
 
         # Add reconstructive loss
-        if params.get('reconstructive_loss_lambda') is not None:
-            g_loss = g_loss + params.get('reconstructive_loss_lambda') * g_mse
+        # TODO: We are only testing one loss at the time right now.
+        if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
+            g_loss = g_loss + params.get('lambda_mse') * g_mse
+
+        elif (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
+            loss_f = losses.FFTWassersteinLoss()
+            fft_wass_loss = loss_f(generated_data, real_data)
+            g_loss = g_loss + params.get('lambda_fftwass') * fft_wass_loss
+        elif (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
+            loss_f = losses.FFTMSELoss()
+            fft_mse = loss_f(generated_data, real_data)
+            g_loss = g_loss + params.get('lambda_fftmse') * fft_mse
 
         g_loss_list.append(g_loss.item())
         #if (params["model_preload"] is not None) and (params["model_preload_cp"] is not None) and (epoch > params["model_preload_cp"]):
         g_loss.backward()
-
         optimizer_G.step()
 
-        if (epoch % params.get('log_freq')==0) & (i == 0):
-            if params.get('reconstructive_loss_lambda') is None:
-                print(f"[Epoch {epoch}/{params.get('n_epochs')}] [Batch {i}/{len(dataloader)}] [D loss: {d_loss.item()}] [G loss: {g_loss.item()}]")
-            else:
-                print(f"[Epoch {epoch}/{params.get('n_epochs')}] [Batch {i}/{len(dataloader)}] [D loss: {d_loss.item()}] [G loss fool: {g_loss.item()-g_mse.item()}] [G MSE: {g_mse.item()}]")
+    t2 = timer()
 
-            plot_gan_samples(real_data[:8].detach().cpu().numpy(), generated_data[:8].detach().cpu().numpy(), num_pairs=8, figsize=(5, 5), 
-                             plot_name=f'comparison_output_{epoch}',
-                             output_folder=os.path.join(output_folder, "plots"))
+    if (epoch % params.get('log_freq')==0):
+        # TODO: The loss should be averaged over the epoch. This shows the loss for the last batch in the epoch.
+        log_out_string = f"[Epoch {epoch}/{params.get('n_epochs')}] [Time: {t2-t1:.2f}s] [D loss: {d_loss.item()}] [G loss: {g_loss.item():.4f}]"
+
+        if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
+            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_mse') * g_mse.item()):.4f}] [G MSE: {g_mse.item():.4f}]"
+        if (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
+            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_fftwass') * fft_wass_loss.item()):.4f}] [G FFTWass: {fft_wass_loss.item():.4f}]"
+        if (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
+            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_fftmse') * fft_mse.item()):.4f}] [G FFTMSE: {fft_mse.item():.4f}]"
+        logs.write(log_out_string + "\n")
+        plot_gan_samples(real_data[:8].detach().cpu().numpy(), generated_data[:8].detach().cpu().numpy(), num_pairs=8, figsize=(5, 5), 
+                            plot_name=f'comparison_output_{epoch}',
+                            output_folder=os.path.join(output_folder, "plots"))
             
     if epoch % params.get('cp_freq')==0:
         torch.save(generator.state_dict(), os.path.join(checkpoint_dir, f"cp-{epoch:04d}.pth"))
@@ -171,3 +192,5 @@ plt.ylabel('Loss')
 plt.legend()
 plt.savefig(f'{output_folder}/plots/losses_per_epoch.pdf')
 
+logs.write(log_functions.print_time("Program ended"))
+logs.close()
