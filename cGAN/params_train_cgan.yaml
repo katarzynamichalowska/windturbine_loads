@@ -4,7 +4,8 @@ lr_G: 0.0001
 lr_D: 0.0001
 n_epochs: 10000
 batch_size: 512
-log_freq: 200
+log_freq: 10
+plot_freq: 200
 sa_weights: false
 datasets: 
   - /home/katarzynam/home/katarzynam/data/data_X_y_scaled_seed_1.npz
@@ -30,15 +31,22 @@ range_TI: null
 range_U: null
 range_DIR: null
 range_D: null
-discr_input: "ts"
+discriminator_input: "ts"
+discriminator_use_log: false
+save_discriminator: true
 
-model_preload: null
-model_preload_cp: 1000
-model_preload_nr_freeze_epochs: 50
-model_dir: '/home/katarzynam/models'
+load_generator_path: /home/katarzynam/models/models_10k_epochs_skip_connections_discriminator/model_only_mse
+load_generator_cp: 10000
+generator_nr_freeze_epochs: 10000
+save_model_dir: '/home/katarzynam/models'
 noise_vector_dim: 10
 hidden_dim: 100
+skip_connections: false
 
+lambda_adversarial: 1.0
 lambda_mse: 0.0
 lambda_fftwass: 0.0
 lambda_fftmse: 0.0
+
+optimizer_G: adam
+optimizer_D: adam
