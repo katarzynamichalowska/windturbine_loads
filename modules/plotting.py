@@ -2,44 +2,45 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def plot_gan_samples(epoch, real_data, generated_data, num_pairs=8, figsize=(10, 5), output_folder="."):
+
+def plot_gan_samples(real_data, generated_data, x=None, num_pairs=8, figsize=(6, 5), plot_name="sample_plot", 
+                     output_folder=".", titles_list=None, log=False):
     """
-    Plot real and generated samples side by side.
+    Plot real and generated samples on the same plot with different colors.
     
     Parameters:
-    - epoch: Current epoch number.
     - real_data: Tensor of real samples.
     - generated_data: Tensor of generated samples.
     - num_pairs: Number of samples to display.
     - figsize: Size of the figure.
-    # Color-code if it's predicted as real or fake
     """
-    real_samples = real_data.detach().cpu()
-    print("Real samples shape:")
-    print(real_samples.shape)
-    generated_samples = generated_data.detach().cpu()
-    print("Generated samples shape:")
-    print(generated_samples.shape)
+    #if not real_data.is_cpu:
+    #    real_samples = real_data.detach().cpu()
+    #if not generated_data.is_cpu:
+    #    generated_samples = generated_data.detach().cpu()
     
     plt.figure(figsize=figsize)
     for i in range(num_pairs):
-        # Plot real data sample
-        plt.subplot(num_pairs, 2, 2 * i + 1)
-        plt.plot(real_samples[i], label='Real' if i == 0 else "")
+        # Plot real and generated data on the same subplot
+        plt.subplot(num_pairs, 1, i + 1)
+        if x is None:
+            plt.plot(real_data[i], label='Real', color='blue')
+            plt.plot(generated_data[i], label='Generated', color='red')
+        else:
+            plt.plot(x, real_data[i], label='Real', color='blue')
+            plt.plot(x, generated_data[i], label='Generated', color='red')
         plt.axis('off')
+        if titles_list is not None:
+            plt.title(titles_list[i], fontsize=8)
         if i == 0:
-            plt.title("Real data")
-
-        # Plot generated data sample
-        plt.subplot(num_pairs, 2, 2 * i + 2)
-        plt.plot(generated_samples[i], label='Generated' if i == 0 else "")
-        plt.axis('off')
-        if i == 0:
-            plt.title("Generated data")
+            plt.legend(loc='upper right')
+        if log:
+            plt.yscale('log')
 
     plt.tight_layout()
-    plt.savefig(os.path.join(output_folder, f'comparison_output_{epoch}.pdf'))
+    plt.savefig(os.path.join(output_folder, f'{plot_name}.pdf'))
     plt.close()
+
 
 def color_scatter(x_label, y_label, color, info, save_path, title=""):
     """
