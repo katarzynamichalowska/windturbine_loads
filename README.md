@@ -44,13 +44,10 @@ To set up this project, follow these steps:
     pip install -r requirements.txt
     ```
 
-4. **Set up environment variables (if needed):**
-
-    Make sure to configure any environment variables or settings required by the project. Example configuration files might be provided.
-
 ## Usage
 
 To train the CGAN, execute the training script:
 
 ```bash
 python train_cgan.py
+    ```
