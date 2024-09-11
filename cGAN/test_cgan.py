@@ -130,6 +130,7 @@ for modelname in modelnames:
         fatigue_list_epoch_pred, fatigue_list_epoch_true = [], []
         generator_diversity_epoch = 0
         wt_cA_mse_loss, wt_cD1_mse_loss, wt_cD2_mse_loss, wt_cD3_mse_loss = 0, 0, 0, 0
+        error_count_not_enough_cycles = 0
 
         for i, (X_i, Y_i) in enumerate(dataloader):
             X_i = X_i.to(device).float()
@@ -156,11 +157,11 @@ for modelname in modelnames:
 
             if params.get('compute_wavelets'):
                 wt_Y_i_cA, wt_Y_i_cD1, wt_Y_i_cD2, wt_Y_i_cD3 = pywt.wavedec(Y_i, params.get('wavelet_function'), level=3)
-                wt_Y_gen_i_cA, wt_Y_gen_i_cD1, wt_Y_gen_i_cD2, wt_Y_gen_i_cD4 = pywt.wavedec(Y_gen_i, params.get('wavelet_function'), level=3)
+                wt_Y_gen_i_cA, wt_Y_gen_i_cD1, wt_Y_gen_i_cD2, wt_Y_gen_i_cD3 = pywt.wavedec(Y_gen_i, params.get('wavelet_function'), level=3)
                 wt_cA_mse_loss += np.sum((wt_Y_i_cA - wt_Y_gen_i_cA)**2)
                 wt_cD1_mse_loss += np.sum((wt_Y_i_cD1 - wt_Y_gen_i_cD1)**2)
                 wt_cD2_mse_loss += np.sum((wt_Y_i_cD2 - wt_Y_gen_i_cD2)**2)
-                wt_cD3_mse_loss += np.sum((wt_Y_i_cD3 - wt_Y_gen_i_cD4)**2)           
+                wt_cD3_mse_loss += np.sum((wt_Y_i_cD3 - wt_Y_gen_i_cD3)**2)           
 
             if params.get('compute_wasserstein'):
                 for k in range(current_batch_size):
@@ -177,7 +178,7 @@ for modelname in modelnames:
                         S_pred = fatpack.find_rainflow_ranges(Y_gen_i[k])
                         fatigue_pred = curve.find_miner_sum(S_pred)
                     except IndexError as e:
-                        print(f"IndexError encountered at index {k}: {e}. Returning 0.")
+                        error_count_not_enough_cycles += 1
                         fatigue_pred = 0.0
                     fatigue_list_epoch_pred.append(fatigue_pred)
                 
@@ -242,6 +243,9 @@ for modelname in modelnames:
         plt.tight_layout()
         plt.savefig(os.path.join(output_folder, f"{plot_name}.pdf"))
         plt.close()
+
+    if error_count_not_enough_cycles > 0:
+        print(f"Error: Not enough cycles to compute fatigue for {error_count_not_enough_cycles}/{len(Y)} samples.")
 
     plot_value_per_epoch(params.get('cp'), fatigue_error_per_epoch, "Fatigue Error", "fatigue_error", os.path.join(output_folder, "testing"))
     plot_value_per_epoch(params.get('cp'), mse_loss_list, "MSE Loss", "ts_mse_loss", os.path.join(output_folder, "testing"))
