@@ -38,6 +38,10 @@ save_discriminator: true
 load_generator_path: /home/katarzynam/models/models_10k_epochs_skip_connections_discriminator/model_only_mse
 load_generator_cp: 10000
 generator_nr_freeze_epochs: 10000
+load_discriminator_path: null
+load_discriminator_cp: null
+discriminator_nr_freeze_epochs: null
+
 save_model_dir: '/home/katarzynam/models'
 noise_vector_dim: 10
 hidden_dim: 100
