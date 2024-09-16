@@ -41,11 +41,8 @@ if isinstance(params.get('datasets'), list):
     for data_dir in params.get('datasets'):
         X, Y, scaler_X, scaler_y, columns_X, columns_Y, info, info_columns = load_preprocessed_data(data_dir, add_info_to_X=params.get('add_info_to_X'))
         X, Y, scaler_X, scaler_y, info = preprocess_data_for_model(X, Y, scaler_X, scaler_y, col_names_X=columns_X, col_names_Y=columns_Y, info=info, params=params)
-
-
         X_list.append(X)
         Y_list.append(Y)
-
     X = np.vstack(X_list)
     Y = np.vstack(Y_list)
 else:
@@ -84,9 +81,15 @@ else:
     elif params.get('discriminator_input') == "fft":
         discriminator = md.DiscriminatorFFTInput(input_channels, condition_dim, use_log=params.get('discriminator_use_log'))
 
+# Load weights of pretrained discriminator
+if (params.get('load_discriminator_path') is not None) and (params.get('load_discriminator_cp') is not None):
+    # TODO: Get the discriminator parameters from the model folder. Generate the discriminator based on it and not on the training parameters.
+    weigths_path = os.path.join(params.get('load_discriminator_path'), "cp", f"cp_discr-{params.get('load_discriminator_cp'):04d}.pth")
+    discriminator.load_state_dict(torch.load(weigths_path, map_location=device))
+
+
+
 # Optimizers
-
-
 optimizer_G = get_optimizer(params.get("optimizer_G"), generator, params.get('lr_G'))
 optimizer_D = get_optimizer(params.get("optimizer_D"), discriminator, params.get('lr_D'))
 
@@ -106,8 +109,7 @@ Y = torch.tensor(Y, dtype=torch.float32)
 print("Training data shapes:")
 print(f"X: {X.shape}")
 print(f"Y: {Y.shape}")
-dataset = TensorDataset(X, Y)
-dataloader = DataLoader(dataset, batch_size=params.get('batch_size'), shuffle=True)
+dataloader = DataLoader(TensorDataset(X, Y), batch_size=params.get('batch_size'), shuffle=True)
 nr_batches = len(dataloader)
 
 if not os.path.exists(os.path.join(output_folder, "plots")):
@@ -119,6 +121,16 @@ if not os.path.exists(cp_dir):
 # Training
 d_loss_list = []
 g_loss_list = []
+
+if (params.get('load_discriminator_path') is not None) and (params.get('load_discriminator_cp') is not None):
+    epoch_start_training_D = params.get('discriminator_nr_freeze_epochs')
+else:
+    epoch_start_training_D = 0
+if (params.get('load_generator_path') is not None) and (params.get('load_generator_cp') is not None):
+    epoch_start_training_G = params.get('generator_nr_freeze_epochs')
+else:
+    epoch_start_training_G = 0
+
     
 for epoch in range(1, params.get('n_epochs')+1):
     t1 = timer()
@@ -135,6 +147,7 @@ for epoch in range(1, params.get('n_epochs')+1):
         optimizer_D.zero_grad()
         generated_data = generator(conditions)
 
+        
         if (params.get('lambda_adversarial') is not None) and (params.get('lambda_adversarial') > 0):
             # Train discriminator only if the adversarial loss is used
             real_loss = adv_loss(discriminator(real_data, conditions), valid)
@@ -142,47 +155,42 @@ for epoch in range(1, params.get('n_epochs')+1):
 
             d_loss = (real_loss + fake_loss) / 2
             d_loss_list.append(d_loss.item())
-            d_loss.backward()
-            optimizer_D.step()
+            if epoch_start_training_D <= epoch:
+                d_loss.backward()
+                optimizer_D.step()
         else:
             d_loss = torch.tensor(0)
 
-        if (params.get('load_generator_path') is not None) and (params.get('load_generator_cp') is not None) and (epoch > params.get('generator_nr_freeze_epochs')):
-            # Freeze the generator if we are using a pretrained model
-            #for param in generator.parameters():
-            #    param.requires_grad = False
+        optimizer_G.zero_grad()
 
-            optimizer_G.zero_grad()
+        g_mse = nn.MSELoss()(generated_data, real_data)
 
-            g_mse = nn.MSELoss()(generated_data, real_data)
-
-            if (params.get('lambda_adversarial') is not None) and (params.get('lambda_adversarial') > 0):
-                g_loss = params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
-            else:
-                g_loss = torch.tensor(0)
-            # TODO: We are only testing one loss at the time right now.
-            if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
-                g_loss = g_loss + params.get('lambda_mse') * g_mse
-
-            elif (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
-                loss_f = losses.FFTWassersteinLoss()
-                fft_wass_loss = loss_f(generated_data, real_data)
-                g_loss = g_loss + params.get('lambda_fftwass') * fft_wass_loss
-
-            elif (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
-                loss_f = losses.FFTMSELoss()
-                fft_mse = loss_f(generated_data, real_data)
-                g_loss = g_loss + params.get('lambda_fftmse') * fft_mse
-
-            # TODO: Add the case where we use pretrained models
-            #if (params["model_preload"] is not None) and (params["model_preload_cp"] is not None) and (epoch > params["model_preload_cp"]):
-            g_loss.backward()
-            optimizer_G.step()
+        if (params.get('lambda_adversarial') is not None) and (params.get('lambda_adversarial') > 0):
+            g_loss = params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
         else:
             g_loss = torch.tensor(0)
-            g_mse = torch.tensor(0)
-            fft_wass_loss = torch.tensor(0)
-            fft_mse = torch.tensor(0)
+        # TODO: We are only testing one loss at the time right now.
+        if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
+            g_loss = g_loss + params.get('lambda_mse') * g_mse
+
+        elif (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
+            loss_f = losses.FFTWassersteinLoss()
+            fft_wass_loss = loss_f(generated_data, real_data)
+            g_loss = g_loss + params.get('lambda_fftwass') * fft_wass_loss
+
+        elif (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
+            loss_f = losses.FFTMSELoss()
+            fft_mse = loss_f(generated_data, real_data)
+            g_loss = g_loss + params.get('lambda_fftmse') * fft_mse
+
+        if epoch_start_training_G <= epoch:
+            g_loss.backward()
+            optimizer_G.step()
+        #else:
+        #    g_loss = torch.tensor(0)
+        #    g_mse = torch.tensor(0)
+        #    fft_wass_loss = torch.tensor(0)
+        #    fft_mse = torch.tensor(0)
         
         g_loss_list.append(g_loss.item())
 
