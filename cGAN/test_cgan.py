@@ -70,7 +70,7 @@ metrics_all_models = {
     'wt_cD1_mse_loss': [],
     'wt_cD2_mse_loss': [],
     'wt_cD3_mse_loss': [],
-    'fatigue_error': []
+    'fatigue_mse_loss': []
 }
 
 for modelname in modelnames:
@@ -149,9 +149,8 @@ for modelname in modelnames:
         'wt_cD1_mse_loss': [],
         'wt_cD2_mse_loss': [],
         'wt_cD3_mse_loss': [],
-        'fatigue_list_pred': [],
-        'fatigue_list_true': []
-    }
+        'fatigue_mse_loss': []    
+        }
 
 
     for epoch in params.get('cp'):
@@ -179,9 +178,8 @@ for modelname in modelnames:
             'wt_cD1_mse_loss': 0,
             'wt_cD2_mse_loss': 0,
             'wt_cD3_mse_loss': 0,
+            'fatigue_mse_loss': 0
         }
-
-        fatigue_list_epoch_pred, fatigue_list_epoch_true = [], []
 
 
         for i, (X_i, Y_i) in enumerate(dataloader):
@@ -217,7 +215,6 @@ for modelname in modelnames:
                 for k in range(current_batch_size):
                     S_true = fatpack.find_rainflow_ranges(Y_i[k])
                     fatigue_true = curve.find_miner_sum(S_true)
-                    fatigue_list_epoch_true.append(fatigue_true)
 
                     try:
                         S_pred = fatpack.find_rainflow_ranges(Y_gen_i[k])
@@ -225,7 +222,7 @@ for modelname in modelnames:
                     except IndexError as e:
                         error_count_not_enough_cycles += 1
                         fatigue_pred = 0.0
-                    fatigue_list_epoch_pred.append(fatigue_pred)
+                    metrics_accum['fatigue_mse_loss'] += np.sum((fatigue_true - fatigue_pred)**2)
                 
             # Statistics on timeseries
             if params.get('plot_samples') and any([i in indices for i in range(sample_tested_size - current_batch_size, sample_tested_size)]):
@@ -246,14 +243,8 @@ for modelname in modelnames:
 
         # Update the metrics dictionary
         for key in metrics_accum:
-            if 'fatigue_list' in key:
-                continue  # Handle fatigue lists separately
-
             metrics[key].append(metrics_accum[key] / num_samples)
 
-        # Update fatigue lists separately
-        metrics['fatigue_list_pred'].append(fatigue_list_epoch_pred)
-        metrics['fatigue_list_true'].append(fatigue_list_epoch_true)
 
         if params.get('plot_samples'):
             plot_gan_samples(Y_sample_list, Y_gen_sample_list, x=t, num_pairs=8, figsize=(3, 5),
@@ -265,22 +256,16 @@ for modelname in modelnames:
             plot_gan_samples(Y_fft_sample_list, Y_gen_fft_sample_list, x=fft_freq, num_pairs=8, figsize=(3, 5),
                             plot_name=f'fft_log_e{epoch}', output_folder=os.path.join(output_folder, "testing"), log=True)
                 
-    fatigue_arr_true = np.array(metrics['fatigue_list_true'])
-    fatigue_arr_pred = np.array(metrics['fatigue_list_pred'])  
-    fatigue_error_per_epoch = np.mean(np.abs(fatigue_arr_true - fatigue_arr_pred), axis=1)
-
     if error_count_not_enough_cycles > 0:
         print(f"Error: Not enough cycles to compute fatigue for {error_count_not_enough_cycles}/{len(Y)} samples.")
 
     for metric_key, data in metrics.items():
-        # Plot the metric
         title = metric_key.replace('_', ' ').title()
         filename = metric_key.lower()
         plot_value_per_epoch(params.get('cp'), data, title, filename, os.path.join(output_folder, "testing"))
 
     for key in metrics:
         metrics_all_models[key].append(metrics[key])
-    metrics_all_models['fatigue_error'].append(fatigue_error_per_epoch)
 
 
 # Plots comparing different models
