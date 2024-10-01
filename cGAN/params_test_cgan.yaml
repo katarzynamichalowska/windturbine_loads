@@ -22,3 +22,8 @@ plot_samples: true
 fatigue_sc: 90.0
 wavelet_function: db4
 
+range_SH: null
+range_TI: null
+range_U: null
+range_DIR: null
+range_D: null
