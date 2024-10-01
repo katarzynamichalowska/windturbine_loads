@@ -2,36 +2,45 @@ import os
 import yaml
 import numpy as np
 import sys
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+import matplotlib.pyplot as plt
+from timeit import default_timer as timer
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, os.path.abspath(parent_dir))
 from modules.dir_functions import timestamp_now
+from modules.log_functions import add_loss_info
 from modules.data_manipulation import preprocess_data_for_model
 from modules.data_loading import load_preprocessed_data
 from modules import log_functions
 from modules.plotting import plot_gan_samples
 from modules.train_utils import get_optimizer
 import modules.model_definitions_pytorch as md
-import torch
-import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
-import matplotlib.pyplot as plt
 import modules.losses as losses
-from timeit import default_timer as timer
-
+import argparse
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-with open(os.path.join(script_dir, 'params_train_cgan.yaml'), 'r') as file:
+parser = argparse.ArgumentParser(description="Pass YAML configuration to the script.")
+parser.add_argument('-p', '--params', required=True, help='Path to the YAML parameters file')
+args = parser.parse_args()
+with open(os.path.join(script_dir, args.params), 'r') as file:
     params = dict(yaml.safe_load(file))
 
-main_model_folder = params.get('save_model_dir')
-output_folder = f"{main_model_folder}/cgan_{timestamp_now()}"
+output_folder = f"{params.get('save_model_dir')}/cgan_{timestamp_now()}"
 
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
+
+logs_path = os.path.join(output_folder, "log.out")
+logs = open(logs_path, 'w')
+logs.write(log_functions.print_time("Program started"))
+
 with open(os.path.join(output_folder, 'params_model.yaml'), 'w') as file:
     yaml.dump(params, file, default_flow_style=False)
 
@@ -48,11 +57,9 @@ if isinstance(params.get('datasets'), list):
 else:
     raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
 
+
 variance_y = np.var(Y)
 cp_dir = os.path.join(output_folder, "cp")
-logs_path = os.path.join(output_folder, "log.out")
-logs = open(logs_path, 'w')
-logs.write(log_functions.print_time("Program started"))
 
 num_samples = X.shape[0]
 timesteps = X.shape[1]
@@ -121,6 +128,8 @@ if not os.path.exists(cp_dir):
 # Training
 d_loss_list = []
 g_loss_list = []
+fft_wass_loss = None
+fft_mse = None
 
 if (params.get('load_discriminator_path') is not None) and (params.get('load_discriminator_cp') is not None):
     epoch_start_training_D = params.get('discriminator_nr_freeze_epochs')
@@ -148,70 +157,65 @@ for epoch in range(1, params.get('n_epochs')+1):
         generated_data = generator(conditions)
 
         
-        if (params.get('lambda_adversarial') is not None) and (params.get('lambda_adversarial') > 0):
-            # Train discriminator only if the adversarial loss is used
+        if params.get('lambda_adversarial', 0) > 0:
             real_loss = adv_loss(discriminator(real_data, conditions), valid)
             fake_loss = adv_loss(discriminator(generated_data.detach(), conditions), fake)
 
             d_loss = (real_loss + fake_loss) / 2
-            d_loss_list.append(d_loss.item())
-            if epoch_start_training_D <= epoch:
+            if epoch >= epoch_start_training_D:
                 d_loss.backward()
                 optimizer_D.step()
         else:
-            d_loss = torch.tensor(0)
-
+            d_loss = torch.tensor(0, device=device, dtype=torch.float32)
+        
+        d_loss_list.append(d_loss.item())
         optimizer_G.zero_grad()
 
+        g_loss = torch.tensor(0, device=device, dtype=torch.float32)
         g_mse = nn.MSELoss()(generated_data, real_data)
 
-        if (params.get('lambda_adversarial') is not None) and (params.get('lambda_adversarial') > 0):
-            g_loss = params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
-        else:
-            g_loss = torch.tensor(0)
-        # TODO: We are only testing one loss at the time right now.
-        if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
-            g_loss = g_loss + params.get('lambda_mse') * g_mse
+ 
+        if params.get('lambda_adversarial', 0) > 0:
+            g_loss += params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
 
-        elif (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
-            loss_f = losses.FFTWassersteinLoss()
-            fft_wass_loss = loss_f(generated_data, real_data)
-            g_loss = g_loss + params.get('lambda_fftwass') * fft_wass_loss
+        if params.get('lambda_mse', 0) > 0:
+            g_loss += params.get('lambda_mse') * g_mse
 
-        elif (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
-            loss_f = losses.FFTMSELoss()
-            fft_mse = loss_f(generated_data, real_data)
-            g_loss = g_loss + params.get('lambda_fftmse') * fft_mse
+        elif params.get('lambda_fftwass', 0) > 0:
+            fft_wass_loss = losses.FFTWassersteinLoss()(generated_data, real_data)
+            g_loss += params.get('lambda_fftwass') * fft_wass_loss
 
-        if epoch_start_training_G <= epoch:
+        elif params.get('lambda_fftmse', 0) > 0:
+            fft_mse = losses.FFTMSELoss()(generated_data, real_data)
+            g_loss += params.get('lambda_fftmse') * fft_mse
+
+        if epoch >= epoch_start_training_G:
             g_loss.backward()
             optimizer_G.step()
-        #else:
-        #    g_loss = torch.tensor(0)
-        #    g_mse = torch.tensor(0)
-        #    fft_wass_loss = torch.tensor(0)
-        #    fft_mse = torch.tensor(0)
         
         g_loss_list.append(g_loss.item())
-
 
     t2 = timer()
 
     # Logs
     if (epoch % params.get('log_freq')==0):
-        # TODO: The loss should be averaged over the epoch. This shows the loss for the last batch in the epoch.
-        log_out_string = f"[Epoch {epoch}/{params.get('n_epochs')}] [Time: {t2-t1:.2f}s] [D loss: {d_loss.item():.4f}] [G loss: {g_loss.item():.4f}]"
+        log_out_string = []
 
-        if (params.get('lambda_mse') is not None) and (params.get('lambda_mse') > 0):
-            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_mse') * g_mse.item()):.4f}] [G MSE: {g_mse.item():.4f}]"
-        
-        if (params.get('lambda_fftwass') is not None) and (params.get('lambda_fftwass') > 0):
-            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_fftwass') * fft_wass_loss.item()):.4f}] [G FFTWass: {fft_wass_loss.item():.4f}]"
-        
-        if (params.get('lambda_fftmse') is not None) and (params.get('lambda_fftmse') > 0):
-            log_out_string += f" [G fool loss: {g_loss.item()-(params.get('lambda_fftmse') * fft_mse.item()):.4f}] [G FFTMSE: {fft_mse.item():.4f}]"
-        
-        logs.write(log_out_string + "\n")
+        log_out_string.extend([
+            f"[Epoch\t{epoch}/{params.get('n_epochs')}]",
+            f"\t[Time:\t{t2-t1:.2f}s]",
+            f"\t[D loss: {d_loss.item():.4f}]",
+            f"\t[G loss: {g_loss.item():.4f}]"
+        ])
+
+        log_out_string.extend([
+            add_loss_info(g_loss, 'MSE', g_mse, params.get('lambda_mse', 0)),
+            add_loss_info(g_loss, 'FFTWass', fft_wass_loss, params.get('lambda_fftwass', 0)),
+            add_loss_info(g_loss, 'FFTMSE', fft_mse, params.get('lambda_fftmse', 0))
+        ])
+        log_out_string = ''.join(filter(None, log_out_string))
+
+        logs.write(log_out_string + '\n')
         print(log_out_string)
 
     if epoch % params.get('plot_freq')==0:
