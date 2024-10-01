@@ -13,7 +13,7 @@ parent_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, os.path.abspath(parent_dir))
 from modules.dir_functions import timestamp_now
 from modules.log_functions import add_loss_info
-from modules.data_manipulation import preprocess_data_for_model
+from modules.data_manipulation import preprocess_data_for_model, subset_by_simulation_conditions
 from modules.data_loading import load_preprocessed_data
 from modules import log_functions
 from modules.plotting import plot_gan_samples
@@ -57,6 +57,7 @@ if isinstance(params.get('datasets'), list):
 else:
     raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
 
+X, Y, info = subset_by_simulation_conditions(X, Y, params, info, info_columns, in_sample=True)
 
 variance_y = np.var(Y)
 cp_dir = os.path.join(output_folder, "cp")
