@@ -5,7 +5,7 @@ import sys
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, os.path.abspath(parent_dir))
-from modules.data_manipulation import preprocess_data_for_model, inverse_scaling
+from modules.data_manipulation import preprocess_data_for_model, inverse_scaling, subset_by_simulation_conditions
 from modules.data_loading import load_preprocessed_data
 from modules.cgan_metrics import compute_generator_diversity, compute_fft_loss
 import modules.model_definitions_pytorch as md
@@ -77,7 +77,7 @@ for modelname in modelnames:
     print(f"Testing model: {modelname}")
     output_folder = f"{main_model_folder}/{modelname}"
 
-    with open(f'{output_folder}/params_model.yaml', 'r') as file:
+    with open(os.path.join(output_folder, 'params_model.yaml'), 'r') as file:
         params_model = dict(yaml.safe_load(file))
 
     # Load data
@@ -95,6 +95,9 @@ for modelname in modelnames:
         Y = np.vstack(Y_list)
     else:
         raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
+    
+
+    X, Y, info = subset_by_simulation_conditions(X, Y, params, info, info_columns, in_sample=True)
 
     variance_y = np.var(Y)
     checkpoint_dir = os.path.join(output_folder, "cp")
@@ -180,7 +183,6 @@ for modelname in modelnames:
             'wt_cD3_mse_loss': 0,
             'fatigue_mse_loss': 0
         }
-
 
         for i, (X_i, Y_i) in enumerate(dataloader):
             X_i = X_i.to(device).float()
