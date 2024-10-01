@@ -7,9 +7,6 @@ This project implements a Conditional Generative Adversarial Network (CGAN) to g
 - [Description](#description)
 - [Installation](#installation)
 - [Usage](#usage)
-- [Features](#features)
-- [Contributing](#contributing)
-- [License](#license)
 - [Contact](#contact)
 
 ## Description
@@ -50,4 +47,8 @@ To train the CGAN, execute the training script:
 
 ```bash
 python train_cgan.py
-    ```
+```
+
+## Contact
+
+Contact person: [katarzyna.michalowska@sintef.no](mailto:katarzyna.michalowska@sintef.no)
