@@ -6,9 +6,15 @@ import numpy as np
 import datetime
 import pprint
 
+def add_loss_info(g_loss, loss_name, loss_value, lambda_value):
+    if lambda_value > 0:
+        fool_loss = g_loss.item() - (lambda_value * loss_value.item())
+        return f"\t[G fool loss: {fool_loss:.4f}]\t[G {loss_name}: {loss_value.item():.4f}]"
+    return ""
+
 
 def print_time(text="Time"):
-    string = "{}: {}".format(text, datetime.datetime.now())
+    string = "{}: {}\n".format(text, datetime.datetime.now())
 
     return string
 
