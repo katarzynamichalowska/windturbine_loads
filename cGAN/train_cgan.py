@@ -22,6 +22,28 @@ import modules.model_definitions_pytorch as md
 import modules.losses as losses
 import argparse
 
+def compute_gradient_penalty(critic, real_data, generated_data, device):
+    # Randomly interpolate between real and fake data
+    alpha = torch.rand(real_data.size(0), 1).to(device)
+    interpolated_data = alpha * real_data + (1 - alpha) * generated_data
+    interpolated_data.requires_grad_(True)
+
+    # Compute critic output
+    critic_output = critic(interpolated_data)
+
+    # Compute gradients
+    gradients = torch.autograd.grad(
+        outputs=critic_output,
+        inputs=interpolated_data,
+        grad_outputs=torch.ones(critic_output.size()).to(device),
+        create_graph=True,
+        retain_graph=True
+    )[0]
+
+    # Compute the gradient penalty
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    return gradient_penalty
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -159,10 +181,17 @@ for epoch in range(1, params.get('n_epochs')+1):
 
         
         if params.get('lambda_adversarial', 0) > 0:
-            real_loss = adv_loss(discriminator(real_data, conditions), valid)
-            fake_loss = adv_loss(discriminator(generated_data.detach(), conditions), fake)
+            if params.get('use_wgan'):
+                d_loss = discriminator(generated_data.detach(), conditions).mean() - discriminator(discriminator(real_data, conditions), valid).mean()
+                gradient_penalty = compute_gradient_penalty(discriminator, real_data, generated_data.detach(), device)
+                d_loss += params.get('lambda_gp') * gradient_penalty
+                
+            else:
+                real_loss = adv_loss(discriminator(real_data, conditions), valid)
+                fake_loss = adv_loss(discriminator(generated_data.detach(), conditions), fake)
+                d_loss = (real_loss + fake_loss) / 2
+            
 
-            d_loss = (real_loss + fake_loss) / 2
             if epoch >= epoch_start_training_D:
                 d_loss.backward()
                 optimizer_D.step()
@@ -175,8 +204,10 @@ for epoch in range(1, params.get('n_epochs')+1):
         g_loss = torch.tensor(0, device=device, dtype=torch.float32)
         g_mse = nn.MSELoss()(generated_data, real_data)
 
- 
-        if params.get('lambda_adversarial', 0) > 0:
+        if params.get('use_wgan'):
+            g_loss += -discriminator(generated_data).mean()
+
+        elif params.get('lambda_adversarial', 0) > 0:
             g_loss += params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
 
         if params.get('lambda_mse', 0) > 0:
