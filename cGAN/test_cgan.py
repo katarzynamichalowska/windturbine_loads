@@ -123,6 +123,12 @@ for modelname in modelnames:
 
     testing_dir = os.path.join(output_folder, "testing")
 
+
+    # Change the name of the folder to reflect that it is on a subset of the data
+    for p in ["U", "TI", "D", "SH", "DIR"]:
+        if (params.get(f"range_{p}") is not None) and (isinstance(params[f"range_{p}"], list)):
+            testing_dir += f"_{p}_{params[f'range_{p}'][0]}_{params[f'range_{p}'][1]}"      
+
     if not os.path.exists(testing_dir):
         os.makedirs(testing_dir)
 
@@ -156,17 +162,13 @@ for modelname in modelnames:
         'wt_cD3_mse_loss': [],
         'fatigue_mse_loss': []    
         }
-
+    
 
     for epoch in params.get('cp'):
         print(f"Epoch: {epoch}")
         weigths_path = os.path.join(main_model_folder, modelname, "cp", f"cp-{epoch:04d}.pth")
-        if device==torch.device('cuda'):
-            generator.load_state_dict(torch.load(weigths_path, weights_only=False))
-        else:
-            generator.load_state_dict(torch.load(weigths_path, weights_only=False, map_location=torch.device('cpu')))
-
-
+        generator.load_state_dict(torch.load(weigths_path, weights_only=False, map_location=device))
+        
 
         Y_sample_list, Y_fft_sample_list, Y_gen_sample_list, Y_gen_fft_sample_list = ([] for _ in range(4))
         error_count_not_enough_cycles = 0
@@ -198,7 +200,7 @@ for modelname in modelnames:
 
             # FFT
             if params.get('compute_fft'):
-                Y_i_fft, Y_gen_i_fft, fft_mse_loss, fft_log_mse_loss = compute_fft_loss(Y_i, Y_gen_i)
+                Y_i_fft, Y_gen_i_fft, fft_mse_loss, fft_log_mse_loss = compute_fft_loss(Y_i, Y_gen_i, exclude_dc=True)
                 metrics_accum['fft_mse_loss'] += fft_mse_loss
                 metrics_accum['fft_log_mse_loss'] += fft_log_mse_loss
 
@@ -259,6 +261,8 @@ for modelname in modelnames:
                             plot_name=f'fft_e{epoch}', output_folder=testing_dir)   
             plot_gan_samples(Y_fft_sample_list, Y_gen_fft_sample_list, x=fft_freq, num_pairs=8, figsize=(3, 5),
                             plot_name=f'fft_log_e{epoch}', output_folder=testing_dir, log=True)
+            plot_gan_samples([Y**2 for Y in Y_fft_sample_list], [Y**2 for Y in Y_gen_fft_sample_list], x=fft_freq, num_pairs=8, figsize=(3, 5),
+                            plot_name=f'psd_log_e{epoch}', output_folder=testing_dir, log=True)
                 
     if error_count_not_enough_cycles > 0:
         print(f"Error: Not enough cycles to compute fatigue for {error_count_not_enough_cycles}/{len(Y)} samples.")
@@ -276,11 +280,17 @@ for modelname in modelnames:
 if len(modelnames)>1:
     modelnames = params.get('model_labels')
     comparison_dir = os.path.join(main_model_folder, "testing")
+
+    # Change the name of the folder to reflect that it is on a subset of the data
+    for p in ["U", "TI", "D", "SH", "DIR"]:
+        if (params.get(f"range_{p}") is not None) and (isinstance(params[f"range_{p}"], list)):
+            comparison_dir += f"_{p}_{params[f'range_{p}'][0]}_{params[f'range_{p}'][1]}"      
+
     if not os.path.exists(comparison_dir):
         os.makedirs(comparison_dir)
 
     for metric_key in metrics_all_models:
         title = metric_key.replace('_', ' ').title()  # Convert key to title format
 
-        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], title, f"{metric_key}_loss", comparison_dir, modelnames=modelnames)
-        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], f"{title} (log)", f"{metric_key}_loss_log", comparison_dir, modelnames=modelnames, ylog=True)
+        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], title, f"{metric_key}", comparison_dir, modelnames=modelnames)
+        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], f"{title} (log)", f"{metric_key}_log", comparison_dir, modelnames=modelnames, ylog=True)
