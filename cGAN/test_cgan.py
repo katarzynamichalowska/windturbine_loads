@@ -121,8 +121,10 @@ for modelname in modelnames:
     dataloader = DataLoader(dataset, batch_size=params.get('batch_size'), shuffle=False, drop_last=False)
     nr_batches = len(dataloader)
 
-    if not os.path.exists(os.path.join(output_folder, "testing")):
-        os.makedirs(os.path.join(output_folder, "testing"))
+    testing_dir = os.path.join(output_folder, "testing")
+
+    if not os.path.exists(testing_dir):
+        os.makedirs(testing_dir)
 
     generator = md.Generator(input_features=X.shape[2], hidden_dim=100, noise_dim=params_model.get('noise_vector_dim'), 
                             timesteps=params_model.get('t_len'))
@@ -250,13 +252,13 @@ for modelname in modelnames:
 
         if params.get('plot_samples'):
             plot_gan_samples(Y_sample_list, Y_gen_sample_list, x=t, num_pairs=8, figsize=(3, 5),
-                            plot_name=f'ts_e{epoch}', output_folder=os.path.join(output_folder, "testing"))
+                            plot_name=f'ts_e{epoch}', output_folder=testing_dir)
             
         if params.get('plot_samples') and params.get('compute_fft'):
             plot_gan_samples(Y_fft_sample_list, Y_gen_fft_sample_list, x=fft_freq, num_pairs=8, figsize=(3, 5),
-                            plot_name=f'fft_e{epoch}', output_folder=os.path.join(output_folder, "testing"))   
+                            plot_name=f'fft_e{epoch}', output_folder=testing_dir)   
             plot_gan_samples(Y_fft_sample_list, Y_gen_fft_sample_list, x=fft_freq, num_pairs=8, figsize=(3, 5),
-                            plot_name=f'fft_log_e{epoch}', output_folder=os.path.join(output_folder, "testing"), log=True)
+                            plot_name=f'fft_log_e{epoch}', output_folder=testing_dir, log=True)
                 
     if error_count_not_enough_cycles > 0:
         print(f"Error: Not enough cycles to compute fatigue for {error_count_not_enough_cycles}/{len(Y)} samples.")
@@ -264,7 +266,7 @@ for modelname in modelnames:
     for metric_key, data in metrics.items():
         title = metric_key.replace('_', ' ').title()
         filename = metric_key.lower()
-        plot_value_per_epoch(params.get('cp'), data, title, filename, os.path.join(output_folder, "testing"))
+        plot_value_per_epoch(params.get('cp'), data, title, filename, testing_dir)
 
     for key in metrics:
         metrics_all_models[key].append(metrics[key])
@@ -273,11 +275,12 @@ for modelname in modelnames:
 # Plots comparing different models
 if len(modelnames)>1:
     modelnames = params.get('model_labels')
-    if not os.path.exists(os.path.join(main_model_folder, "testing")):
-        os.makedirs(os.path.join(main_model_folder, "testing"))
+    comparison_dir = os.path.join(main_model_folder, "testing")
+    if not os.path.exists(comparison_dir):
+        os.makedirs(comparison_dir)
 
     for metric_key in metrics_all_models:
         title = metric_key.replace('_', ' ').title()  # Convert key to title format
 
-        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], title, f"{metric_key}_loss", os.path.join(main_model_folder, "testing"), modelnames=modelnames)
-        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], f"{title} (log)", f"{metric_key}_loss_log", os.path.join(main_model_folder, "testing"), modelnames=modelnames, ylog=True)
+        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], title, f"{metric_key}_loss", comparison_dir, modelnames=modelnames)
+        plot_value_per_epoch_multiple_models(params.get('cp'), metrics_all_models[metric_key], f"{title} (log)", f"{metric_key}_loss_log", comparison_dir, modelnames=modelnames, ylog=True)
