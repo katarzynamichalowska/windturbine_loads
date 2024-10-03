@@ -36,6 +36,7 @@ def plot_gan_samples(real_data, generated_data, x=None, num_pairs=8, figsize=(6,
             plt.legend(loc='upper right')
         if log:
             plt.yscale('log')
+            plt.xscale('log')
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_folder, f'{plot_name}.pdf'))
