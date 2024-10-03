@@ -33,14 +33,14 @@ range_DIR: null
 range_D: null
 discriminator_input: "ts"
 discriminator_use_log: false
-save_discriminator: true
+save_discriminator: false
 
-load_generator_path: /home/katarzynam/models/models_10k_epochs_skip_connections_discriminator/model_only_mse
-load_generator_cp: 10000
-generator_nr_freeze_epochs: 10000
+load_generator_path: null
+generator_nr_freeze_epochs: 0
+
 load_discriminator_path: null
-load_discriminator_cp: null
-discriminator_nr_freeze_epochs: null
+load_discriminator_cp: 10000
+discriminator_nr_freeze_epochs: 500
 
 save_model_dir: '/home/katarzynam/models'
 noise_vector_dim: 10
@@ -54,3 +54,9 @@ lambda_fftmse: 0.0
 
 optimizer_G: adam
 optimizer_D: adam
+
+soft_labels: true
+use_wgan: false
+
+lambda_gp: 10  # Gradient penalty coefficient
+n_critic: 5    # Number of discriminator updates per generator update
