@@ -12,37 +12,17 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.join(current_dir, '..')
 sys.path.insert(0, os.path.abspath(parent_dir))
 from modules.dir_functions import timestamp_now
-from modules.log_functions import add_loss_info
+from modules.log_functions import produce_training_log
 from modules.data_manipulation import preprocess_data_for_model, subset_by_simulation_conditions
 from modules.data_loading import load_preprocessed_data
 from modules import log_functions
 from modules.plotting import plot_gan_samples
-from modules.train_utils import get_optimizer
+from modules.train_utils import get_optimizer, compute_gradient_penalty
 import modules.model_definitions_pytorch as md
 import modules.losses as losses
 import argparse
 
-def compute_gradient_penalty(critic, real_data, generated_data, device):
-    # Randomly interpolate between real and fake data
-    alpha = torch.rand(real_data.size(0), 1).to(device)
-    interpolated_data = alpha * real_data + (1 - alpha) * generated_data
-    interpolated_data.requires_grad_(True)
 
-    # Compute critic output
-    critic_output = critic(interpolated_data)
-
-    # Compute gradients
-    gradients = torch.autograd.grad(
-        outputs=critic_output,
-        inputs=interpolated_data,
-        grad_outputs=torch.ones(critic_output.size()).to(device),
-        create_graph=True,
-        retain_graph=True
-    )[0]
-
-    # Compute the gradient penalty
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-    return gradient_penalty
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -113,7 +93,6 @@ else:
 
 # Load weights of pretrained discriminator
 if (params.get('load_discriminator_path') is not None) and (params.get('load_discriminator_cp') is not None):
-    # TODO: Get the discriminator parameters from the model folder. Generate the discriminator based on it and not on the training parameters.
     weigths_path = os.path.join(params.get('load_discriminator_path'), "cp", f"cp_discr-{params.get('load_discriminator_cp'):04d}.pth")
     discriminator.load_state_dict(torch.load(weigths_path, map_location=device))
 
@@ -126,7 +105,7 @@ optimizer_D = get_optimizer(params.get("optimizer_D"), discriminator, params.get
 
 
 # Loss function
-adv_loss = nn.BCELoss()
+adv_loss = nn.BCEWithLogitsLoss()
 
 generator.to(device)
 discriminator.to(device)
@@ -149,19 +128,14 @@ if not os.path.exists(cp_dir):
 
 
 # Training
-d_loss_list = []
-g_loss_list = []
-fft_wass_loss = None
-fft_mse = None
+d_loss_list, g_loss_list = [], []
+fft_wass_loss, fft_mse = None, None
+epoch_start_training_D, epoch_start_training_G = 0, 0
 
 if (params.get('load_discriminator_path') is not None) and (params.get('load_discriminator_cp') is not None):
     epoch_start_training_D = params.get('discriminator_nr_freeze_epochs')
-else:
-    epoch_start_training_D = 0
 if (params.get('load_generator_path') is not None) and (params.get('load_generator_cp') is not None):
     epoch_start_training_G = params.get('generator_nr_freeze_epochs')
-else:
-    epoch_start_training_G = 0
 
     
 for epoch in range(1, params.get('n_epochs')+1):
@@ -182,8 +156,8 @@ for epoch in range(1, params.get('n_epochs')+1):
         
         if params.get('lambda_adversarial', 0) > 0:
             if params.get('use_wgan'):
-                d_loss = discriminator(generated_data.detach(), conditions).mean() - discriminator(discriminator(real_data, conditions), valid).mean()
-                gradient_penalty = compute_gradient_penalty(discriminator, real_data, generated_data.detach(), device)
+                d_loss = discriminator(generated_data.detach(), conditions).mean() - discriminator(real_data, conditions).mean()
+                gradient_penalty = compute_gradient_penalty(discriminator, real_data, generated_data.detach(), conditions, device)
                 d_loss += params.get('lambda_gp') * gradient_penalty
                 
             else:
@@ -205,7 +179,7 @@ for epoch in range(1, params.get('n_epochs')+1):
         g_mse = nn.MSELoss()(generated_data, real_data)
 
         if params.get('use_wgan'):
-            g_loss += -discriminator(generated_data).mean()
+            g_loss += -discriminator(generated_data, conditions).mean()
 
         elif params.get('lambda_adversarial', 0) > 0:
             g_loss += params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
@@ -229,24 +203,8 @@ for epoch in range(1, params.get('n_epochs')+1):
 
     t2 = timer()
 
-    # Logs
-    if (epoch % params.get('log_freq')==0):
-        log_out_string = []
-
-        log_out_string.extend([
-            f"[Epoch\t{epoch}/{params.get('n_epochs')}]",
-            f"\t[Time:\t{t2-t1:.2f}s]",
-            f"\t[D loss: {d_loss.item():.4f}]",
-            f"\t[G loss: {g_loss.item():.4f}]"
-        ])
-
-        log_out_string.extend([
-            add_loss_info(g_loss, 'MSE', g_mse, params.get('lambda_mse', 0)),
-            add_loss_info(g_loss, 'FFTWass', fft_wass_loss, params.get('lambda_fftwass', 0)),
-            add_loss_info(g_loss, 'FFTMSE', fft_mse, params.get('lambda_fftmse', 0))
-        ])
-        log_out_string = ''.join(filter(None, log_out_string))
-
+    if epoch % params.get('log_freq')==0:
+        log_out_string = produce_training_log(epoch, t1, t2, d_loss, g_loss, g_mse, fft_wass_loss, fft_mse, params)
         logs.write(log_out_string + '\n')
         print(log_out_string)
 
