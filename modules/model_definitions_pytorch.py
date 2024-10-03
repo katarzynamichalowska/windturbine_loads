@@ -93,7 +93,6 @@ class Discriminator(nn.Module):
             nn.Conv1d(128, output_channels, kernel_size=3, padding=1),
             nn.AdaptiveAvgPool1d(1),  # Reduce to one feature per example
             nn.Flatten(),  # Flatten to match expected output shape for loss calculation
-            nn.Linear()  # Ensure output is a valid probability
         )
 
     def forward(self, data, conditions):
@@ -122,7 +121,6 @@ class DiscriminatorWithSkipConnections(nn.Module):
         # Adaptive average pooling layer to reduce to one feature per example
         self.pool = nn.AdaptiveAvgPool1d(1)
         self.flatten = nn.Flatten()
-        self.linear = nn.Linear()
 
     def forward(self, data, conditions):
         # Combine data and conditions along the feature/channel dimension
@@ -143,7 +141,6 @@ class DiscriminatorWithSkipConnections(nn.Module):
         # Pooling, flattening, and activation
         out = self.pool(out3)
         out = self.flatten(out)
-        out = self.linear(out)
         return out
 
 
@@ -161,7 +158,6 @@ class DiscriminatorFFTInput(nn.Module):
             nn.Conv1d(128, output_channels, kernel_size=3, padding=1),
             nn.AdaptiveAvgPool1d(1),  # Reduce to one feature per example
             nn.Flatten(),  # Flatten to match expected output shape for loss calculation
-            nn.Linear()  # Ensure output is a valid probability
         )
 
     def forward(self, data, conditions):
@@ -202,7 +198,6 @@ class DiscriminatorFFTInputWithSkipConnections(nn.Module):
         # Adaptive average pooling, flattening, and sigmoid activation
         self.pool = nn.AdaptiveAvgPool1d(1)
         self.flatten = nn.Flatten()
-        self.sigmoid = nn.Linear()
 
     def forward(self, data, conditions):
         # Concatenate data and conditions along the feature/channel dimension
@@ -238,7 +233,6 @@ class DiscriminatorFFTInputWithSkipConnections(nn.Module):
         # Pooling, flattening, and activation
         out = self.pool(out3)
         out = self.flatten(out)
-        out = self.sigmoid(out)
         return out
 
 
@@ -256,7 +250,6 @@ class DiscriminatorTSFFTInput(nn.Module):
             nn.Conv1d(128, output_channels, kernel_size=3, padding=1),
             nn.AdaptiveAvgPool1d(1),  # Reduce to one feature per example
             nn.Flatten(),  # Flatten to match expected output shape for loss calculation
-            nn.Linear()  # Ensure output is a valid probability
         )
 
     def forward(self, data, conditions):
