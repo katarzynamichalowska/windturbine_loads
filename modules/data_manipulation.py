@@ -160,13 +160,19 @@ def subset_by_simulation_conditions(X, Y, params, info, info_columns, in_sample=
         raise ValueError(f"X and info have different number of samples: {X.shape[0]} and {info.shape[0]}")
     for p in ["U", "TI", "D", "SH", "DIR"]:
         if params[f"range_{p}"] is not None:
+            if not isinstance(params[f"range_{p}"], list):
+                raise TypeError(f"range_{p} should be a list, but got {type(params[f'range_{p}'])}. Received: {params[f'range_{p}']}")
+
+            nr_samples_0 = X.shape[0]
             if in_sample:
                 idx = np.where((info[:, list(info_columns).index(p)] >= params[f"range_{p}"][0]) & (info[:, list(info_columns).index(p)] <= params[f"range_{p}"][1]))[0]
             else:
                 idx = np.where((info[:, list(info_columns).index(p)] < params[f"range_{p}"][0]) | (info[:, list(info_columns).index(p)] > params[f"range_{p}"][1]))[0]
             info = info[idx]
             X,Y = X[idx], Y[idx]
+            nr_samples_1 = X.shape[0]
             print(f"Subset by {p} range: {params[f'range_{p}']}")
+            print(f"Number of samples before: {nr_samples_0}, after: {nr_samples_1}")
     return X, Y, info
 
 
