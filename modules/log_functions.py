@@ -6,11 +6,33 @@ import numpy as np
 import datetime
 import pprint
 
-def add_loss_info(g_loss, loss_name, loss_value, lambda_value):
-    if lambda_value > 0:
-        fool_loss = g_loss.item() - (lambda_value * loss_value.item())
-        return f"\t[G fool loss: {fool_loss:.4f}]\t[G {loss_name}: {loss_value.item():.4f}]"
-    return ""
+
+def produce_training_log(epoch, t1, t2, d_loss, g_loss, g_mse, fft_wass_loss, fft_mse, params):
+
+    def _add_loss_info(g_loss, loss_name, loss_value, lambda_value):
+        if lambda_value > 0:
+            fool_loss = g_loss.item() - (lambda_value * loss_value.item())
+            return f"\t[G fool loss: {fool_loss:.4f}]\t[G {loss_name}: {loss_value.item():.4f}]"
+        return ""
+
+
+    log_out_string = []
+
+    log_out_string.extend([
+        f"[Epoch\t{epoch}/{params.get('n_epochs')}]",
+        f"\t[Time:\t{t2-t1:.2f}s]",
+        f"\t[D loss: {d_loss.item():.4f}]",
+        f"\t[G loss: {g_loss.item():.4f}]"
+    ])
+
+    log_out_string.extend([
+        _add_loss_info(g_loss, 'MSE', g_mse, params.get('lambda_mse', 0)),
+        _add_loss_info(g_loss, 'FFTWass', fft_wass_loss, params.get('lambda_fftwass', 0)),
+        _add_loss_info(g_loss, 'FFTMSE', fft_mse, params.get('lambda_fftmse', 0))
+    ])
+    log_out_string = ''.join(filter(None, log_out_string))
+
+    return log_out_string
 
 
 def print_time(text="Time"):
