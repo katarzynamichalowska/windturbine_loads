@@ -22,7 +22,7 @@ import modules.model_definitions_pytorch as md
 import modules.losses as losses
 import argparse
 
-
+torch.backends.cudnn.benchmark = True
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -114,7 +114,7 @@ Y = torch.tensor(Y, dtype=torch.float32)
 print("Training data shapes:")
 print(f"X: {X.shape}")
 print(f"Y: {Y.shape}")
-dataloader = DataLoader(TensorDataset(X, Y), batch_size=params.get('batch_size'), shuffle=True)
+dataloader = DataLoader(TensorDataset(X, Y), batch_size=params.get('batch_size'), shuffle=True, pin_memory=True, drop_last=True)
 nr_batches = len(dataloader)
 
 if not os.path.exists(os.path.join(output_folder, "plots")):
@@ -132,27 +132,38 @@ if (params.get('load_discriminator_path') is not None) and (params.get('load_dis
 if (params.get('load_generator_path') is not None) and (params.get('load_generator_cp') is not None):
     epoch_start_training_G = params.get('generator_nr_freeze_epochs')
 
+lambda_adversarial = params.get('lambda_adversarial', 0)
+lambda_mse = params.get('lambda_mse', 0)
+lambda_fftwass = params.get('lambda_fftwass', 0)
+lambda_fftmse = params.get('lambda_fftmse', 0)
+use_wgan = params.get('use_wgan', False)
+lambda_gp = params.get('lambda_gp', 0)
+plot_freq = params.get('plot_freq', 100)
+log_freq = params.get('log_freq', 10)
+cp_freq = params.get('cp_freq', 100)
+save_discr = params.get('save_discr')
+n_epochs = params.get('n_epochs')
+
+valid = torch.ones(params.get('batch_size'), 1, requires_grad=False).to(device)
+fake = torch.zeros(params.get('batch_size'), 1, requires_grad=False).to(device)
     
-for epoch in range(1, params.get('n_epochs')+1):
+for epoch in range(1, n_epochs+1):
     t1 = timer()
+    d_accum = torch.tensor(0, device=device, dtype=torch.float32)
+    g_accum = torch.tensor(0, device=device, dtype=torch.float32)
 
     for i, (conditions, real_data) in enumerate(dataloader):
-        real_data = real_data.to(device).float()
-        conditions = conditions.to(device).float()
-        current_batch_size = real_data.size(0)
-
-        # Adversarial labels
-        valid = torch.ones(current_batch_size, 1, requires_grad=False).to(device)
-        fake = torch.zeros(current_batch_size, 1, requires_grad=False).to(device)
+        real_data = real_data.to(device, non_blocking=True).float()
+        conditions = conditions.to(device, non_blocking=True).float()
 
         optimizer_D.zero_grad()
         generated_data = generator(conditions)
 
-        if params.get('lambda_adversarial', 0) > 0:
-            if params.get('use_wgan'):
+        if lambda_adversarial > 0:
+            if use_wgan:
                 d_loss = discriminator(generated_data.detach(), conditions).mean() - discriminator(real_data, conditions).mean()
                 gradient_penalty = compute_gradient_penalty(discriminator, real_data, generated_data.detach(), conditions, device)
-                d_loss += params.get('lambda_gp') * gradient_penalty
+                d_loss += lambda_gp * gradient_penalty
                 
             else:
                 real_loss = adv_loss(discriminator(real_data, conditions), valid)
@@ -165,66 +176,60 @@ for epoch in range(1, params.get('n_epochs')+1):
         else:
             d_loss = torch.tensor(0, device=device, dtype=torch.float32)
         
-        d_loss_list.append(d_loss.item())
         optimizer_G.zero_grad()
 
         g_loss = torch.tensor(0, device=device, dtype=torch.float32)
         g_mse = nn.MSELoss()(generated_data, real_data)
 
-        if params.get('use_wgan'):
+        if use_wgan:
             g_loss += -discriminator(generated_data, conditions).mean()
 
-        elif params.get('lambda_adversarial', 0) > 0:
-            g_loss += params.get('lambda_adversarial') * adv_loss(discriminator(generated_data, conditions), valid)
+        elif lambda_adversarial > 0:
+            g_loss += lambda_adversarial * adv_loss(discriminator(generated_data, conditions), valid)
 
-        if params.get('lambda_mse', 0) > 0:
-            g_loss += params.get('lambda_mse') * g_mse
+        if lambda_mse > 0:
+            g_loss += lambda_mse * g_mse
 
-        elif params.get('lambda_fftwass', 0) > 0:
+        elif lambda_fftwass > 0:
             fft_wass_loss = losses.FFTWassersteinLoss()(generated_data, real_data)
-            g_loss += params.get('lambda_fftwass') * fft_wass_loss
+            g_loss += lambda_fftwass * fft_wass_loss
 
-        elif params.get('lambda_fftmse', 0) > 0:
+        elif lambda_fftmse > 0:
             fft_mse = losses.FFTMSELoss()(generated_data, real_data)
-            g_loss += params.get('lambda_fftmse') * fft_mse
+            g_loss += lambda_fftmse * fft_mse
 
         if epoch >= epoch_start_training_G:
             g_loss.backward()
             optimizer_G.step()
-        
-        g_loss_list.append(g_loss.item())
 
+        d_accum += d_loss
+        g_accum += g_loss
+        
     t2 = timer()
 
-    if epoch % params.get('log_freq')==0:
-        log_out_string = produce_training_log(epoch, t1, t2, d_loss, g_loss, g_mse, fft_wass_loss, fft_mse, params)
+    d_loss_list.append(d_accum.item())
+    g_loss_list.append(g_accum.item())
+
+    if epoch % log_freq==0:
+        log_out_string = produce_training_log(epoch, t1, t2, d_accum, g_accum, g_mse, fft_wass_loss, fft_mse, params)
         logs.write(log_out_string + '\n')
         print(log_out_string)
 
-    if epoch % params.get('plot_freq')==0:
-        plot_gan_samples(real_data[:8].detach().cpu().numpy(), generated_data[:8].detach().cpu().numpy(), num_pairs=8, figsize=(5, 5), 
-                            plot_name=f'comparison_output_{epoch}',
-                            output_folder=os.path.join(output_folder, "plots"))
+    if epoch % plot_freq==0:
+        plot_gan_samples(real_data[:8].detach().cpu().numpy(), generated_data[:8].detach().cpu().numpy(), 
+                         num_pairs=8, figsize=(5, 5), plot_name=f'comparison_output_{epoch}',
+                         output_folder=os.path.join(output_folder, "plots"))
             
-    if epoch % params.get('cp_freq')==0:
+    if epoch % cp_freq==0:
         torch.save(generator.state_dict(), os.path.join(cp_dir, f"cp-{epoch:04d}.pth"))
-        if params.get('save_discr'):
+        if save_discr:
             torch.save(discriminator.state_dict(), os.path.join(cp_dir, f"cp_discr-{epoch:04d}.pth"))
         print(f"Checkpoint saved at epoch {epoch}")
 
-# Plot the losses over iterations
-plt.figure(figsize=(10, 5))
-plt.plot(d_loss_list, label='Discriminator loss')
-plt.plot(g_loss_list, label='Generator loss')
-plt.xlabel('Iteration')
-plt.ylabel('Loss')
-plt.legend()
-plt.savefig(f'{output_folder}/plots/losses_per_iteration.pdf')
-
 # Plot the losses over epochs
 plt.figure(figsize=(10, 5))
-plt.plot(np.array(d_loss_list).reshape(-1, nr_batches).mean(axis=1), label='Discriminator loss')
-plt.plot(np.array(g_loss_list).reshape(-1, nr_batches).mean(axis=1), label='Generator loss')
+plt.plot(np.array(d_loss_list), label='Discriminator loss')
+plt.plot(np.array(g_loss_list), label='Generator loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
