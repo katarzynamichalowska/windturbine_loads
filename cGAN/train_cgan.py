@@ -23,7 +23,6 @@ import modules.losses as losses
 import argparse
 
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -48,14 +47,16 @@ with open(os.path.join(output_folder, 'params_model.yaml'), 'w') as file:
 
 # Load data
 if isinstance(params.get('datasets'), list):
-    X_list, Y_list = [], []
+    X_list, Y_list, info_list = [], [], []
     for data_dir in params.get('datasets'):
         X, Y, scaler_X, scaler_y, columns_X, columns_Y, info, info_columns = load_preprocessed_data(data_dir, add_info_to_X=params.get('add_info_to_X'))
         X, Y, scaler_X, scaler_y, info = preprocess_data_for_model(X, Y, scaler_X, scaler_y, col_names_X=columns_X, col_names_Y=columns_Y, info=info, params=params)
         X_list.append(X)
         Y_list.append(Y)
+        info_list.append(info)
     X = np.vstack(X_list)
     Y = np.vstack(Y_list)
+    info = np.vstack(info_list)
 else:
     raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
 
@@ -96,13 +97,9 @@ if (params.get('load_discriminator_path') is not None) and (params.get('load_dis
     weigths_path = os.path.join(params.get('load_discriminator_path'), "cp", f"cp_discr-{params.get('load_discriminator_cp'):04d}.pth")
     discriminator.load_state_dict(torch.load(weigths_path, map_location=device))
 
-
-
 # Optimizers
 optimizer_G = get_optimizer(params.get("optimizer_G"), generator, params.get('lr_G'))
 optimizer_D = get_optimizer(params.get("optimizer_D"), discriminator, params.get('lr_D'))
-
-
 
 # Loss function
 adv_loss = nn.BCEWithLogitsLoss()
@@ -112,7 +109,6 @@ discriminator.to(device)
 
 X = torch.tensor(X, dtype=torch.float32)
 Y = torch.tensor(Y, dtype=torch.float32)
-
 
 # Create dataset and dataloader
 print("Training data shapes:")
@@ -125,7 +121,6 @@ if not os.path.exists(os.path.join(output_folder, "plots")):
     os.makedirs(os.path.join(output_folder, "plots"))
 if not os.path.exists(cp_dir):
     os.makedirs(cp_dir)
-
 
 # Training
 d_loss_list, g_loss_list = [], []
@@ -153,7 +148,6 @@ for epoch in range(1, params.get('n_epochs')+1):
         optimizer_D.zero_grad()
         generated_data = generator(conditions)
 
-        
         if params.get('lambda_adversarial', 0) > 0:
             if params.get('use_wgan'):
                 d_loss = discriminator(generated_data.detach(), conditions).mean() - discriminator(real_data, conditions).mean()
@@ -165,7 +159,6 @@ for epoch in range(1, params.get('n_epochs')+1):
                 fake_loss = adv_loss(discriminator(generated_data.detach(), conditions), fake)
                 d_loss = (real_loss + fake_loss) / 2
             
-
             if epoch >= epoch_start_training_D:
                 d_loss.backward()
                 optimizer_D.step()
