@@ -7,32 +7,26 @@ import datetime
 import pprint
 
 
-def produce_training_log(epoch, t1, t2, d_loss, g_loss, g_mse, fft_wass_loss, fft_mse, params):
+def produce_training_log(epoch, t1, t2, d_loss, g_loss, g_adv=None, g_mse=None, g_fft_mse=None, g_fft_wass=None, params=None):
 
-    def _add_loss_info(g_loss, loss_name, loss_value, lambda_value):
-        if lambda_value > 0:
-            fool_loss = g_loss.item() - (lambda_value * loss_value.item())
-            return f"\t[G fool loss: {fool_loss:.4f}]\t[G {loss_name}: {loss_value.item():.4f}]"
-        return ""
+    log_out_string = [
+        f"[Epoch {epoch}/{params.get('n_epochs')}]",
+        f"[Time: {t2-t1:.2f}s]",
+        f"[D loss: {d_loss.item():.4f}]",
+        f"[G loss: {g_loss.item():.4f}]"
+    ]
+    
+    if g_adv is not None:
+        log_out_string.append(f"[G adv: {g_adv.item():.4f}]")
+    if g_mse is not None:
+        log_out_string.append(f"[G MSE: {g_mse.item():.4f}]")
+    if g_fft_mse is not None:
+        log_out_string.append(f"[G FFT MSE: {g_fft_mse.item():.4f}]")
+    if g_fft_wass is not None:
+        log_out_string.append(f"[G FFT Wass: {g_fft_wass.item():.4f}]")
 
-
-    log_out_string = []
-
-    log_out_string.extend([
-        f"[Epoch\t{epoch}/{params.get('n_epochs')}]",
-        f"\t[Time:\t{t2-t1:.2f}s]",
-        f"\t[D loss: {d_loss.item():.4f}]",
-        f"\t[G loss: {g_loss.item():.4f}]"
-    ])
-
-    log_out_string.extend([
-        _add_loss_info(g_loss, 'MSE', g_mse, params.get('lambda_mse', 0)),
-        _add_loss_info(g_loss, 'FFTWass', fft_wass_loss, params.get('lambda_fftwass', 0)),
-        _add_loss_info(g_loss, 'FFTMSE', fft_mse, params.get('lambda_fftmse', 0))
-    ])
-    log_out_string = ''.join(filter(None, log_out_string))
-
-    return log_out_string
+    # Directly join the list into a string
+    return ' '.join(log_out_string)
 
 
 def print_time(text="Time"):
