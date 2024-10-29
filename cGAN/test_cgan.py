@@ -96,7 +96,7 @@ for modelname in modelnames:
     else:
         raise ValueError("The 'datasets' parameter must be a list of dataset directories.")
     
-
+    print(scaler_y)
     X, Y, info = subset_by_simulation_conditions(X, Y, params, info, info_columns, in_sample=True)
 
     variance_y = np.var(Y)
@@ -122,6 +122,8 @@ for modelname in modelnames:
     nr_batches = len(dataloader)
 
     testing_dir = os.path.join(output_folder, "testing")
+    if params.get("discriminator_verification"):
+        testing_dir += "_discr"
 
 
     # Change the name of the folder to reflect that it is on a subset of the data
@@ -136,6 +138,10 @@ for modelname in modelnames:
                             timesteps=params_model.get('t_len'))
     generator.to(device)
 
+    if params.get('discriminator_verification'):
+        discriminator =  md.Discriminator(input_channels, condition_dim)        
+        discriminator.to(device)
+
     np.random.seed(42)
     indices = np.random.choice(len(Y), 8, replace=False)
 
@@ -144,10 +150,10 @@ for modelname in modelnames:
     # Sampling interval is in seconds so the frequency is in Hz
     fft_freq = np.fft.fftfreq(params_model.get('t_len'), d=t[1]-t[0])[1:timesteps//2]
 
-
     if params.get('compute_fatigue'):
         Sc = params.get('fatigue_sc')
         curve = fatpack.TriLinearEnduranceCurve(Sc)
+
 
     metrics = {
         'mse_loss': [],
@@ -168,7 +174,10 @@ for modelname in modelnames:
         print(f"Epoch: {epoch}")
         weigths_path = os.path.join(main_model_folder, modelname, "cp", f"cp-{epoch:04d}.pth")
         generator.load_state_dict(torch.load(weigths_path, weights_only=False, map_location=device))
-        
+
+        if params.get('discriminator_verification'):
+            weights_path_discr = os.path.join(main_model_folder, modelname, "cp", f"cp_discr-{epoch:04d}.pth")
+            discriminator.load_state_dict(torch.load(weights_path_discr, weights_only=False, map_location=device))        
 
         Y_sample_list, Y_fft_sample_list, Y_gen_sample_list, Y_gen_fft_sample_list = ([] for _ in range(4))
         error_count_not_enough_cycles = 0
@@ -193,8 +202,27 @@ for modelname in modelnames:
             current_batch_size = Y_i.size(0)
             sample_tested_size += current_batch_size
 
-            Y_gen_i, Y_i = generator(X_i).detach().cpu().numpy().squeeze(), Y_i.detach().cpu().numpy().squeeze()
+            Y_gen_i = generator(X_i)#.detach().cpu().numpy().squeeze(), Y_i.detach().cpu().numpy().squeeze()
+            if params.get('discriminator_verification'):
+                Y_gen_samples = [Y_gen_i.detach().cpu().numpy().squeeze()]
+                scores = [discriminator(X_i, Y_gen_i).detach().cpu().numpy().squeeze()]
+
+                for s in range(params.get('nr_discriminator_samples')-1):
+                    Y_gen_i = generator(X_i)  
+                    fake_scores_i = discriminator(X_i, Y_gen_i).detach().cpu().numpy().squeeze()
+                    Y_gen_samples.append(Y_gen_i.detach().cpu().numpy().squeeze()) 
+                    scores.append(fake_scores_i)  
+            
+                scores = np.array(scores)  # Shape: (nr_discriminator_samples, batch_size)
+                Y_gen_samples = np.array(Y_gen_samples)  # Shape: (nr_discriminator_samples, batch_size, ...)
+                min_indices = np.argmin(scores, axis=0)  # Shape: (batch_size,)
+                Y_gen_i = Y_gen_samples[min_indices, np.arange(current_batch_size)]
+                
+
+            Y_i = Y_i.detach().cpu().numpy().squeeze()
+            # TODO: Why are we using index 0?
             Y_i, Y_gen_i = inverse_scaling(Y_i, scaler=scaler_y[0]), inverse_scaling(Y_gen_i, scaler=scaler_y[0])
+
 
             metrics_accum['mse_loss'] += np.sum((Y_i - Y_gen_i)**2)
 
@@ -205,10 +233,8 @@ for modelname in modelnames:
                 metrics_accum['fft_log_mse_loss'] += fft_log_mse_loss
 
             if params.get('compute_wavelets'):
-                # Perform wavelet decomposition for both original and generated data
                 wt_Y_i, wt_Y_gen_i = pywt.wavedec(Y_i, params['wavelet_function'], level=3), pywt.wavedec(Y_gen_i, params['wavelet_function'], level=3)
 
-                # Iterate over the decomposition levels (cA, cD1, cD2, cD3) and accumulate the losses
                 for level, key in enumerate(['wt_cA_mse_loss', 'wt_cD1_mse_loss', 'wt_cD2_mse_loss', 'wt_cD3_mse_loss']):
                     metrics_accum[key] += np.sum((wt_Y_i[level] - wt_Y_gen_i[level])**2)        
 
@@ -230,7 +256,6 @@ for modelname in modelnames:
                         fatigue_pred = 0.0
                     metrics_accum['fatigue_mse_loss'] += np.sum((fatigue_true - fatigue_pred)**2)
                 
-            # Statistics on timeseries
             if params.get('plot_samples') and any([i in indices for i in range(sample_tested_size - current_batch_size, sample_tested_size)]):
                 indices_in_range = [i for i in range(sample_tested_size - current_batch_size, sample_tested_size) if i in indices]
                 for idx in indices_in_range:
@@ -253,8 +278,51 @@ for modelname in modelnames:
 
 
         if params.get('plot_samples'):
+            #if params.get('discriminator_verification'):
+            #    # Initialize lists to store the scores and generated samples
+            #    scores = []
+            #    Y_gen_samples = []  # List to store generated samples for further use
+
+                # Iterate over the specified number of discriminator samples
+#                for s in range(params.get('nr_discriminator_samples')):
+#                    # Generate samples based on X_i
+#                    Y_gen_i = generator(X_i)  # Generate sample
+#                    fake_scores_i = discriminator(X_i, Y_gen_i).detach().cpu().numpy().squeeze()
+
+#                    # Store all generated samples and their corresponding scores
+#                    Y_gen_samples.append(Y_gen_i.detach().cpu().numpy().squeeze())  # Store generated sample
+#                    scores.append(fake_scores_i)  # Store scores
+
+                # Convert scores to a numpy array for easier processing
+#                scores = np.array(scores)
+
+                # Initialize lists to store best samples and their scores for the first 8 inputs
+#                best_samples = []
+#                best_scores = []
+
+                # Iterate over the first 8 samples from X_i
+ #               for i in range(8):
+                    # Get the scores for the i-th input across all generated samples
+ #                   sample_scores = scores[:, i]  # Get scores for the i-th sample across all iterations
+                    
+                    # Find the index of the highest score for the i-th sample
+ #                   best_index = np.argmax(sample_scores)  # Get the index of the max score
+ #                  sample_i = inverse_scaling(Y_gen_samples[best_index][i], scaler=scaler_y[0])
+
+
+                    # Append the best sample and its corresponding score
+  #                  best_samples.append(sample_i)  # Append the best generated sample for this input
+                    
+   #                 best_scores.append(sample_scores[best_index])  # Append the best score
+
+                # Plot the best samples using plot_gan_samples
+    #            plot_gan_samples(Y_sample_list, best_samples, x=t, num_pairs=8, figsize=(3, 5),
+    #                            plot_name=f'ts_e{epoch}', output_folder=testing_dir)
+
+     #       else:
             plot_gan_samples(Y_sample_list, Y_gen_sample_list, x=t, num_pairs=8, figsize=(3, 5),
                             plot_name=f'ts_e{epoch}', output_folder=testing_dir)
+
             
         if params.get('plot_samples') and params.get('compute_fft'):
             plot_gan_samples(Y_fft_sample_list, Y_gen_fft_sample_list, x=fft_freq, num_pairs=8, figsize=(3, 5),
@@ -280,6 +348,8 @@ for modelname in modelnames:
 if len(modelnames)>1:
     modelnames = params.get('model_labels')
     comparison_dir = os.path.join(main_model_folder, "testing")
+    if params.get("discriminator_verification"):
+        testing_dir += "_discr"
 
     # Change the name of the folder to reflect that it is on a subset of the data
     for p in ["U", "TI", "D", "SH", "DIR"]:
